@@ -1,0 +1,15 @@
+**
+!requirements-web.txt
+!photojoy/
+!photojoy/*.py
+!photojoy_web/
+!photojoy_web/*.py
+!photojoy_web/static/
+!photojoy_web/static/*
+!models/
+!models/manifest.json
+!scripts/
+!scripts/prepare_models.py
+!licenses/
+!licenses/**
+!Dockerfile
