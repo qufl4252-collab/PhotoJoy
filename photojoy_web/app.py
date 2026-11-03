@@ -309,7 +309,10 @@ def create_app(data_dir=None, public_url=None, google_client_id=None, engine=Non
             folder = uploads / uid()
             folder.mkdir()
             original_name = Path((file.filename or "photo").replace("\\", "/"))
-            target = inside(folder, folder / (safe_name(original_name.stem, 120) + suffix))
+            # Linux limits each filename by UTF-8 bytes, not Unicode characters.
+            stem = safe_name(original_name.stem, 120)
+            stem = stem.encode("utf-8")[:200-len(suffix.encode("utf-8"))].decode("utf-8", errors="ignore").rstrip(" .") or "photo"
+            target = inside(folder, folder / (stem + suffix))
             size = 0
             try:
                 with target.open("xb") as output:

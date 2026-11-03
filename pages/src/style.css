@@ -1860,6 +1860,10 @@ dialog::backdrop {
   }
   .welcome h1 {
     font-size: 27px;
+    word-break: keep-all;
+  }
+  .welcome h1 br {
+    display: block;
   }
   .welcome > p {
     max-width: 310px;

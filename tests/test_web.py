@@ -162,6 +162,7 @@ def test_upload_names_duplicates_and_rejection_cleanup(web, monkeypatch):
     register(client)
     media = upload(client, "../../"+"한"*180+".png")
     assert media["name"].endswith(".png") and "/" not in media["name"]
+    assert len(media["name"].encode("utf-8")) <= 200
     duplicate = client.post("/api/media", files={"file":("duplicate.png",photo())})
     assert duplicate.json()["duplicate"] is True
     assert len(list(app.state.data_root.glob("users/*/uploads/*/*"))) == 1
