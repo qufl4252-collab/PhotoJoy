@@ -1,0 +1,7 @@
+node_modules/
+dist/
+public/models/
+public/ort/
+public/licenses/
+test-output/
+.env.local

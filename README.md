@@ -1,6 +1,8 @@
 # PhotoJoy
 
-**웹 버전 0.3:** Chrome에서 로그인하고 사진을 정리하는 버전입니다. `PhotoJoy-Web.cmd`로 실행하세요. [웹 실행·GitHub·배포·Google 로그인 설정](WEB_README.md)과 [웹 검증 결과](WEB_TEST_RESULTS.md)를 확인하세요. 외부 서비스 배포와 Google 클라이언트 연결은 아직 필요합니다.
+**공개 웹 버전 0.5:** [PhotoJoy 열기](https://qufl4252-collab.github.io/PhotoJoy/) · [웹 사용·개발·데이터 이전 안내](PAGES_README.md). 이메일/Google 로그인 후 사진을 추가하고 자동 분류를 시작하면 아이별 정리까지 수행합니다. 불확실한 얼굴만 확인 필요로 남습니다. 사진은 현재 브라우저 안에 보관됩니다.
+
+기존 자체 호스팅 웹 0.3은 `PhotoJoy-Web.cmd`로 실행하는 별도 서버 버전입니다. [서버 실행 안내](WEB_README.md)는 해당 버전에 적용됩니다. 기존 데이터는 보존되며 새 웹으로 옮기는 절차는 위 안내를 확인하세요.
 
 **Windows 버전 0.2.0:** 아래는 기존 데스크톱 프로그램 설명입니다.
 

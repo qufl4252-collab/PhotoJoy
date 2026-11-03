@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko">
+  <meta charset="utf-8" /><title>PhotoJoy 개발용 실모델 검증</title
+  ><style>
+    body {
+      font: 16px sans-serif;
+      max-width: 1000px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+    pre {
+      white-space: pre-wrap;
+    }
+    img {
+      width: 200px;
+    }
+  </style>
+  <h1>PhotoJoy 실모델 검증 (개발 전용)</h1>
+  <p>
+    선택한 공개 샘플을 브라우저에서 분석합니다. 서버로 보내거나 계정 보관함에
+    저장하지 않습니다.
+  </p>
+  <button id="sample">로컬 공개 샘플로 검사</button
+  ><button id="pipeline">실제 분류·ZIP 통합 검증</button
+  ><input id="fixtures" type="file" multiple />
+  <pre id="result">검증 파일 선택 대기</pre>
+  <div id="previews"></div>
+  <script type="module">
+    import { analyzeFile } from "./src/media-adapter.js";
+    import { compare } from "./src/face-math.js";
+    import { realPipeline } from "./scripts/browser-integration.js";
+    document.getElementById("pipeline").onclick = () =>
+      realPipeline(document.getElementById("result")).catch(
+        (error) =>
+          (document.getElementById("result").textContent = error.stack),
+      );
+    if (!import.meta.env.DEV) throw new Error("개발 서버에서만 실행합니다.");
+    async function check(files) {
+      const results = [],
+        embeddings = [],
+        out = document.getElementById("result");
+      for (const file of files) {
+        out.textContent = "분석 중: " + file.name;
+        try {
+          const r = await analyzeFile(file, {});
+          embeddings.push(r.faces.map((f) => f.embedding));
+          results.push({
+            file: file.name,
+            faces: r.faces.map(({ embedding, ...f }) => ({
+              ...f,
+              dimension: embedding.length,
+            })),
+            diagnostics: r.diagnostics,
+          });
+          for (const entry of r.entries.filter((e) => e.table === "crops")) {
+            const img = new Image();
+            img.src = URL.createObjectURL(entry.value);
+            document.getElementById("previews").append(img);
+          }
+        } catch (error) {
+          results.push({ file: file.name, error: error.message });
+        }
+        out.textContent = JSON.stringify(results, null, 2);
+      }
+      if (embeddings[0]?.[0] && embeddings[1]?.[0]) {
+        results.push({
+          comparison: compare(embeddings[1][0], {
+            reference: [embeddings[0][0]],
+          }),
+        });
+        out.textContent = JSON.stringify(results, null, 2);
+      }
+    }
+    document.getElementById("fixtures").onchange = (e) => check(e.target.files);
+    const heicButton = document.createElement("button");
+    heicButton.textContent = "공개 HEIC 변환 검증";
+    document.getElementById("sample").after(heicButton);
+    heicButton.onclick = async () => {
+      const r = await fetch("./test-output/fixtures/example.heic");
+      await check([
+        new File([await r.blob()], "example.heic", { type: "image/heic" }),
+      ]);
+    };
+    document.getElementById("sample").onclick = async () => {
+      const files = [];
+      for (const name of ["astronaut.png", "grace_hopper.jpg"]) {
+        const r = await fetch("./test-output/fixtures/" + name);
+        files.push(
+          new File([await r.blob()], name, {
+            type: name.endsWith("png") ? "image/png" : "image/jpeg",
+          }),
+        );
+      }
+      await check(files);
+    };
+  </script>
+</html>
