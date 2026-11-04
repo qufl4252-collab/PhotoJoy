@@ -12,7 +12,7 @@ PhotoJoy independently implements its workflow and UI. Its browser build uses:
 | YuNet | 2023mar | MIT, OpenCV Zoo (models/manifest.json) |
 | SFace | 2021dec | Apache-2.0, OpenCV Zoo (models/manifest.json) |
 
-License texts are included under `licenses/` in the published site. Firebase only supplies Authentication; photo processing and storage happen locally in the browser.
+License texts are included under `licenses/` in the published site. Firebase supplies Authentication and private account roster storage for child names, groups, selected face crops and comparison vectors. Classification and original media storage run in the browser.
 
 ## HEIC decoder replacement and source
 

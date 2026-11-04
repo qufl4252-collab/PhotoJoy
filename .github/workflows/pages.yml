@@ -5,6 +5,8 @@ on:
     paths:
       [
         "pages/**",
+        "database.rules.json",
+        "firebase.json",
         "models/manifest.json",
         "licenses/**",
         ".github/workflows/pages.yml",
@@ -30,6 +32,12 @@ jobs:
         working-directory: pages
       - run: npm test
         working-directory: pages
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Verify private account roster rules and synchronization
+        run: npx --yes --package=firebase-tools@15.34.2 firebase emulators:exec --project demo-photojoy --only database "node pages/scripts/test-roster-rules.mjs"
       - run: npm run build
         working-directory: pages
       - uses: actions/configure-pages@v5

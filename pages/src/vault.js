@@ -73,26 +73,65 @@ export class Vault {
   async remove(table, id) {
     return this.putMany([{ table, id, remove: true }]);
   }
-  async putMany(entries) {
+  async putMany(entries, { remote = false, ifStamp } = {}) {
     this.check();
     const db = await database();
     this.check();
     return new Promise((resolve, reject) => {
       const tx = db.transaction("records", "readwrite");
-      for (const { table, id, value, remove } of entries) {
-        if (remove) tx.objectStore("records").delete([this.owner, table, id]);
-        else
-          tx.objectStore("records").put({
-            key: [this.owner, table, id],
-            owner: this.owner,
-            table,
-            value,
-          });
-      }
+      const records = tx.objectStore("records");
+      let applied = false,
+        rosterChanged = false;
+      const put = (table, id, value) =>
+        records.put({
+          key: [this.owner, table, id],
+          owner: this.owner,
+          table,
+          value,
+        });
+      const write = () => {
+        applied = true;
+        const changes = new Map();
+        for (const { table, id, value, remove } of entries) {
+          if (remove) records.delete([this.owner, table, id]);
+          else put(table, id, value);
+          if (
+            this.trackRoster &&
+            !remote &&
+            (table === "children" || table === "references")
+          )
+            changes.set(table + "/" + id, { table, id, removed: !!remove });
+        }
+        for (const [key, change] of changes) {
+          rosterChanged = true;
+          const request = records.get([this.owner, "rosterVersions", key]);
+          request.onsuccess = () => {
+            const previous = Number(
+              request.result?.value.rev.split("-")[0] || 0,
+            );
+            const rev =
+              String(Math.max(Date.now(), previous + 1)).padStart(15, "0") +
+              "-" +
+              crypto.randomUUID();
+            put("rosterVersions", key, { ...change, rev, dirty: true });
+          };
+        }
+      };
+      if (ifStamp) {
+        const request = records.get([
+          this.owner,
+          "rosterVersions",
+          ifStamp.key,
+        ]);
+        request.onsuccess = () => {
+          if ((request.result?.value.rev ?? null) === ifStamp.rev) write();
+        };
+      } else write();
       tx.oncomplete = () => {
         try {
           this.check();
-          resolve();
+          if (rosterChanged) this.onRosterWrite?.();
+          resolve(applied);
         } catch (error) {
           reject(error);
         }

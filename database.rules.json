@@ -1,0 +1,35 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rosters": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "children": {
+          "$id": {
+            ".write": "auth != null && auth.uid === $uid && newData.exists() && $id.matches(/^[a-zA-Z0-9:_-]{1,300}$/)",
+            ".validate": "newData.hasChild('rev') && ((newData.child('removed').val() === true && !newData.hasChild('name') && !newData.hasChild('group')) || (!newData.hasChild('removed') && newData.hasChildren(['name','group'])))",
+            "rev": {".validate": "newData.isString() && newData.val().matches(/^[0-9]{15}-[a-f0-9-]{36}$/)"},
+            "removed": {".validate": "newData.val() === true"},
+            "name": {".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"},
+            "group": {".validate": "newData.isString() && newData.val().length <= 80"},
+            "$other": {".validate": false}
+          }
+        },
+        "references": {
+          "$id": {
+            ".write": "auth != null && auth.uid === $uid && newData.exists() && $id.matches(/^[a-zA-Z0-9:_-]{1,300}$/)",
+            ".validate": "newData.hasChild('rev') && ((newData.child('removed').val() === true && !newData.hasChild('image') && !newData.hasChild('vector') && !newData.hasChild('child') && !newData.hasChild('mime')) || (!newData.hasChild('removed') && newData.hasChildren(['child','vector','image','mime'])))",
+            "rev": {".validate": "newData.isString() && newData.val().matches(/^[0-9]{15}-[a-f0-9-]{36}$/)"},
+            "removed": {".validate": "newData.val() === true"},
+            "child": {".validate": "newData.isString() && newData.val().matches(/^[a-zA-Z0-9:_-]{1,300}$/)"},
+            "vector": {".validate": "newData.isString() && newData.val().length === 684"},
+            "image": {".validate": "newData.isString() && newData.val().length <= 524288"},
+            "mime": {".validate": "newData.val() === 'image/jpeg' || newData.val() === 'image/png' || newData.val() === 'image/webp'"},
+            "$other": {".validate": false}
+          }
+        }
+      }
+    }
+  }
+}

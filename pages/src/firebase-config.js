@@ -4,5 +4,6 @@ export const firebaseConfig = {
   apiKey: "AIzaSyA1agj6uXhY-31PZ-yN_WJBBTAwkuZG1nw",
   authDomain: "photojoy-8065a.firebaseapp.com",
   projectId: "photojoy-8065a",
+  databaseURL: "https://photojoy-8065a-default-rtdb.asia-southeast1.firebasedatabase.app",
   appId: "1:95284668469:web:c4f4d419058e12ed73a97c",
 };

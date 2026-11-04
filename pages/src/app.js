@@ -8,6 +8,8 @@ import {
   resetPassword,
   onAccountChanged,
 } from "./auth.js";
+import { AccountRoster } from "./account-roster.js";
+import { accountCloud } from "./roster-cloud.js";
 import { Project } from "./project.js";
 import { analyzeFile, captureDate } from "./media-adapter.js";
 import { STATES, calibration } from "./classification.js";
@@ -28,6 +30,7 @@ const $ = (id) => document.getElementById(id),
         })[c],
     );
 const platform = () => document.querySelector("[name=platform]:checked").value;
+let roster;
 let project,
   user,
   data,
@@ -91,7 +94,30 @@ function release() {
 async function enter(result) {
   user = result.user;
   project = await new Project(getVault(), analyzeFile, captureDate).init();
-  project.change = refresh;
+  const activeProject = project;
+  let pendingRosterRefresh = false;
+  activeProject.change = async () => {
+    if (project !== activeProject) return;
+    if (pendingRosterRefresh && !activeProject.running) {
+      pendingRosterRefresh = false;
+      await activeProject.reorganize();
+      await activeProject.rematch();
+    }
+    await refresh();
+  };
+  roster?.close();
+  roster = new AccountRoster(
+    project.v,
+    accountCloud(project.v),
+    updateRosterStatus,
+    async () => {
+      if (project !== activeProject) return;
+      release();
+      pendingRosterRefresh = true;
+      await activeProject.change();
+      if (project === activeProject && !$("modal").open) await render();
+    },
+  );
   $("login-screen").hidden = true;
   $("workspace").hidden = false;
   $("password").value = "";
@@ -99,11 +125,19 @@ async function enter(result) {
   $("platform-label").textContent =
     { windows: "윈도우", android: "안드로이드", iphone: "아이폰" }[
       user.platform
-    ] + " · 이 브라우저에 보관";
+    ] + " · 분류 원본은 기기에 보관";
   await refresh();
   navigate("auto");
+  const sessionRoster = roster;
+  sessionRoster
+    .init()
+    .catch(() =>
+      sessionRoster.status("계정 연결을 확인하고 다시 동기화해 주세요."),
+    );
 }
 function showLogin() {
+  roster?.close();
+  roster = null;
   $("device-save-dialog")?.close();
   project?.pause();
   project = null;
@@ -231,8 +265,29 @@ async function openPhoto(id) {
     }</div><p>${badge(m.state)} ${esc(m.captured)} · ${esc(m.date_source)} · ${esc(m.error || m.reason || "")}</p><p>정리된 아이: ${m.children.map((id) => esc(name(id))).join(", ") || "없음"}</p><div class="face-list">${(await Promise.all(m.faces.map(async (f) => `<div class="face-row correction-row"><img src="${await blobURL("crops", f.id)}" alt="검출 얼굴"><div class="face-info"><b>${f.candidate?.accepted ? esc(name(f.candidate.child)) : "확인 필요 / 미등록"}</b><small>비교 점수 ${f.candidate?.score == null ? "없음" : f.candidate.score.toFixed(3)} · 차순위 ${f.candidate?.runner_up?.toFixed(3) || "없음"}</small><small>${esc(f.candidate?.reason || f.embeddingError)} ${f.frame != null ? "· " + f.frame.toFixed(1) + "초" : ""}</small><label>실제 인물<select id="face-child-${f.id}"><option value="">미등록 인물 / 제외</option>${data.kids.map((k) => `<option value="${k.id}" ${k.id === (f.manualChild || f.candidate?.child) ? "selected" : ""}>${esc(k.name)}</option>`).join("")}</select></label><label><input id="face-learn-${f.id}" type="checkbox" ${f.quality?.referenceUsable === false ? "disabled" : ""}>확인한 얼굴을 참고 데이터에 반영</label></div><button data-correct="${f.id}" data-media-id="${m.id}">얼굴 교정 저장</button><button data-new-from-face="${f.id}" data-media-id="${m.id}">새 아이로 등록</button></div>`))).join("")}</div><div class="pipeline-actions"><button data-assign-one="${m.id}">사진 전체 아이 배정</button><button data-undo="${m.id}">이전 변경 되돌리기</button><button data-reanalyze-one="${m.id}">원본 재분석</button><button data-original="${m.id}">원본 다운로드</button></div><details><summary>검출·인식 진단 및 정리 경로</summary><pre>${esc(JSON.stringify({ diagnostics: m.diagnostics, policy: m.policy, paths: m.paths }, null, 2))}</pre></details><p class="score-note">비교 점수는 신원 일치 확률이 아닙니다. 사진 전체 배정은 참고 얼굴을 자동 학습하지 않습니다.</p>`,
   );
 }
+function rosterPanel() {
+  return (
+    '<section class="panel section-body"><h2>계정 아이 명단</h2><p>이름·반·선택한 얼굴 부분 사진과 비교값을 같은 계정의 기기에서 사용합니다. 분류할 사진·영상 원본은 기기에 보관합니다.</p><p id="roster-status" role="status">' +
+    esc(roster?.message) +
+    '</p><button type="button" data-action="sync-roster" id="roster-sync">' +
+    (roster?.enabled ? "다시 동기화" : "기존 아이 명단을 계정에 보관") +
+    "</button></section>"
+  );
+}
+function updateRosterStatus(current) {
+  if (current !== roster) return;
+  if ($("roster-status")) $("roster-status").textContent = current.message;
+  if ($("roster-sync"))
+    $("roster-sync").textContent = current.enabled
+      ? "다시 동기화"
+      : "기존 아이 명단을 계정에 보관";
+}
+window.addEventListener("online", () => roster?.sync());
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) roster?.sync();
+});
 function renderChildren() {
-  return `<section class="panel section-body"><div class="section-top"><h2>아이와 참고 얼굴</h2><button class="primary" data-action="add-child">＋ 아이 등록</button></div><p>정면·다른 각도의 선명한 사진 3~5장을 권장합니다. 여러 얼굴이 나오면 학습할 얼굴을 직접 고릅니다.</p><div class="children-grid">${data.kids
+  return `${rosterPanel()}<section class="panel section-body"><div class="section-top"><h2>아이와 참고 얼굴</h2><button class="primary" data-action="add-child">＋ 아이 등록</button></div><p>정면·다른 각도의 선명한 사진 3~5장을 권장합니다. 여러 얼굴이 나오면 학습할 얼굴을 직접 고릅니다.</p><div class="children-grid">${data.kids
     .map((k) => {
       const refs = data.refs.filter((r) => r.child === k.id),
         n = data.media.filter((m) => m.children.includes(k.id)).length;
@@ -339,7 +394,7 @@ async function renderSettings() {
       (a, b) => b.created - a.created,
     ),
     trash = (await project.v.all("media")).filter((m) => m.deletedAt);
-  return `<section class="panel section-body"><h2>분류와 정리 설정</h2><form id="settings-form"><div class="form-row"><label>인식 민감도<select id="sensitivity">${[
+  return `${rosterPanel()}<section class="panel section-body"><h2>분류와 정리 설정</h2><form id="settings-form"><div class="form-row"><label>인식 민감도<select id="sensitivity">${[
     ["bold", "과감"],
     ["balanced", "기본"],
     ["careful", "신중"],
@@ -350,7 +405,7 @@ async function renderSettings() {
     )
     .join(
       "",
-    )}</select></label><label>폴더 정리<select id="unit"><option value="week" ${s.unit === "week" ? "selected" : ""}>주차별 (1~7일이 1주차)</option><option value="day" ${s.unit === "day" ? "selected" : ""}>일별</option></select></label></div><div class="form-row"><label>최소 얼굴 크기 (분석 이미지 px)<input class="text-input" id="min-pixels" type="number" min="16" max="200" value="${s.minFacePixels}"></label><label>작은 얼굴 제외 (가장 큰 얼굴 대비, 0은 제외 안 함)<input class="text-input" id="min-relative" type="number" min="0" max="0.9" step="0.05" value="${s.minRelative}"></label></div><p>${esc(p.note)} 점수 기준 ${p.threshold.toFixed(3)}, 후보 차이 ${p.margin.toFixed(3)}. ${p.calibrated ? `참고 얼굴 내 통과율 ${(p.referenceRecall * 100).toFixed(1)}% (현장 정확도 아님).` : ""}</p><button class="primary">저장하고 미확정 결과 다시 비교</button></form></section><section class="panel section-body"><h2>저장·복원</h2><p>사진과 얼굴 특징은 이 브라우저의 계정별 IndexedDB에만 보관됩니다. Firebase에는 로그인 계정만 보관합니다. 다른 기기로 동기화되지 않습니다. 사이트 데이터 삭제 시 자료가 사라지므로 원본과 ZIP을 별도로 보관하세요. 휴지통은 자동 삭제하지 않습니다.</p><button data-action="backup">변경 전 상태 백업</button> <button data-action="import-portable">기존 PhotoJoy 자료 가져오기</button><p class="input-help">기존 서버 자료는 PhotoJoy-기존자료 ZIP 분할본을 모두 선택하세요. 브라우저 안에서만 읽습니다.</p><details><summary>상태 백업 ${backups.length}개</summary>${backups
+    )}</select></label><label>폴더 정리<select id="unit"><option value="week" ${s.unit === "week" ? "selected" : ""}>주차별 (1~7일이 1주차)</option><option value="day" ${s.unit === "day" ? "selected" : ""}>일별</option></select></label></div><div class="form-row"><label>최소 얼굴 크기 (분석 이미지 px)<input class="text-input" id="min-pixels" type="number" min="16" max="200" value="${s.minFacePixels}"></label><label>작은 얼굴 제외 (가장 큰 얼굴 대비, 0은 제외 안 함)<input class="text-input" id="min-relative" type="number" min="0" max="0.9" step="0.05" value="${s.minRelative}"></label></div><p>${esc(p.note)} 점수 기준 ${p.threshold.toFixed(3)}, 후보 차이 ${p.margin.toFixed(3)}. ${p.calibrated ? `참고 얼굴 내 통과율 ${(p.referenceRecall * 100).toFixed(1)}% (현장 정확도 아님).` : ""}</p><button class="primary">저장하고 미확정 결과 다시 비교</button></form></section><section class="panel section-body"><h2>저장·복원</h2><p>아이 명단과 선택한 참고 얼굴은 계정 동기화 상태를 위에서 확인하세요. 분류 원본과 결과는 현재 브라우저에 보관합니다. 사이트 데이터 삭제 시 자료가 사라지므로 원본과 ZIP을 별도로 보관하세요. 휴지통은 자동 삭제하지 않습니다.</p><button data-action="backup">변경 전 상태 백업</button> <button data-action="import-portable">기존 PhotoJoy 자료 가져오기</button><p class="input-help">기존 서버 자료는 PhotoJoy-기존자료 ZIP 분할본을 모두 선택하세요. 브라우저 안에서만 읽습니다.</p><details><summary>상태 백업 ${backups.length}개</summary>${backups
     .slice(0, 20)
     .map(
       (b) =>
@@ -379,7 +434,7 @@ function download(blob, filename) {
 function guide() {
   modal(
     "PhotoJoy 사용 가이드",
-    "<ol><li>아이 관리에서 한글 이름·반과 참고 얼굴 3~5장을 등록합니다.</li><li>사진 자동 분류에서 파일 또는 폴더를 추가하고 자동 분류 시작을 누릅니다.</li><li>확실한 아이는 즉시 정리됩니다. 불확실한 얼굴만 확인 필요에서 교정하며 여러 사진은 일괄 배정할 수 있습니다.</li><li>얼굴별 교정에서 참고 데이터 반영을 직접 선택하면 다음 비교에 사용합니다. 자동 추측은 학습하지 않습니다.</li><li>아이별 정리 결과에서 전체 또는 선택한 원본을 기기에 저장하세요. 아이폰 공유 메뉴의 ‘이미지 저장’은 사진 앱에, ‘파일에 저장’은 선택한 폴더에 보관합니다.</li><li>학부모 보내기에서 아이별/전체 ZIP을 내려받습니다. 실제 발송 후 직접 발송했음을 표시합니다.</li><li>설정에서 민감도, 일별·주차별 정리, 백업 복원, 휴지통을 관리합니다.</li></ol><p>사진은 현재 브라우저에 보관됩니다. 분석 중 탭을 열어 두세요. 영상은 최대 8프레임을 분석합니다. HEIC·MOV 지원은 브라우저 코덱에 따라 다르며 실패한 파일도 원본을 보관합니다.</p>",
+    "<ol><li>아이 관리에서 한글 이름·반과 참고 얼굴 3~5장을 등록합니다. 기존 기기 명단은 ‘기존 아이 명단을 계정에 보관’을 한 번 누르세요. 같은 계정으로 로그인하면 명단과 참고 얼굴을 자동으로 불러옵니다.</li><li>사진 자동 분류에서 파일 또는 폴더를 추가하고 자동 분류 시작을 누릅니다.</li><li>확실한 아이는 즉시 정리됩니다. 불확실한 얼굴만 확인 필요에서 교정하며 여러 사진은 일괄 배정할 수 있습니다.</li><li>얼굴별 교정에서 참고 데이터 반영을 직접 선택하면 다음 비교에 사용합니다. 자동 추측은 학습하지 않습니다.</li><li>아이별 정리 결과에서 전체 또는 선택한 원본을 기기에 저장하세요. 아이폰 공유 메뉴의 ‘이미지 저장’은 사진 앱에, ‘파일에 저장’은 선택한 폴더에 보관합니다.</li><li>학부모 보내기에서 아이별/전체 ZIP을 내려받습니다. 실제 발송 후 직접 발송했음을 표시합니다.</li><li>설정에서 민감도, 일별·주차별 정리, 백업 복원, 휴지통을 관리합니다.</li></ol><p>사진은 현재 브라우저에 보관됩니다. 분석 중 탭을 열어 두세요. 영상은 최대 8프레임을 분석합니다. HEIC·MOV 지원은 브라우저 코덱에 따라 다르며 실패한 파일도 원본을 보관합니다.</p>",
   );
 }
 document.addEventListener("click", (event) => {
@@ -477,12 +532,14 @@ document.addEventListener("click", (event) => {
       return render();
     }
     switch (b.dataset.action) {
+      case "sync-roster":
+        return roster.enable();
       case "guide":
         return guide();
       case "privacy":
         return modal(
           "사진 보관 안내",
-          "<p>로그인 정보는 Firebase 인증에, 사진·얼굴 특징·결과는 현재 브라우저의 계정별 저장소에 보관합니다. 사진은 외부로 업로드하지 않습니다. 사용 후 로그아웃하고 원본과 ZIP을 따로 보관하세요. 기기 소유자는 브라우저 저장소를 열 수 있으므로 개인 기기를 사용하세요.</p>",
+          "<p>계정 명단은 Firebase에서 로그인한 사용자별로 보관합니다. 동기화 대상은 아이 이름·반·선택한 참고 얼굴 부분 사진·비교값입니다. 분류용 원본과 분석 결과는 현재 브라우저에 보관합니다. 사용 후 로그아웃하고 원본과 ZIP을 따로 보관하세요. 기기 소유자는 브라우저 저장소를 열 수 있으므로 개인 기기를 사용하세요.</p>",
         );
       case "pick":
         return $("file-picker").click();
@@ -559,7 +616,10 @@ document.addEventListener("change", (e) => {
       : selected.delete(e.target.dataset.select);
     $("selected-count").textContent = selected.size + "개 선택";
     if ($("save-gallery"))
-      $("save-gallery").textContent = (selected.size ? "선택한 " + selected.size : "전체 " + reviewItems().length) + "개 기기에 저장";
+      $("save-gallery").textContent =
+        (selected.size
+          ? "선택한 " + selected.size
+          : "전체 " + reviewItems().length) + "개 기기에 저장";
   }
 });
 document.addEventListener("submit", (event) => {
@@ -628,7 +688,8 @@ document.addEventListener("submit", (event) => {
           end: $("export-end").value,
           all: b.value === "all",
         };
-        if (b.value === "device") return openDeviceSave(project, data.media, data.kids, options);
+        if (b.value === "device")
+          return openDeviceSave(project, data.media, data.kids, options);
         notify("ZIP을 준비하고 있습니다…");
         const r = await makeExports(project, options);
         await render();
@@ -775,7 +836,7 @@ async function boot() {
       showLogin();
     }
     onAccountChanged((account) => {
-      if (!account && user) showLogin();
+      if (user && account?.uid !== user.id) showLogin();
     });
   } catch (error) {
     authError(error.message);
