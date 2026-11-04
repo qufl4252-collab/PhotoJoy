@@ -2016,6 +2016,13 @@ dialog::backdrop {
 .landing-header {
   width: 100%;
 }
+.device-save-body { padding: 12px 22px 22px; }
+.device-save-body p { line-height: 1.6; }
+.device-scope { font-weight: 700; }
+.device-controls, .device-pages { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.device-files > div { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+.device-files a { flex: 1; overflow-wrap: anywhere; color: #1767aa; }
+.device-files button { flex-shrink: 0; }
 @media (min-width: 851px) and (max-height: 850px) {
   .landing-header {
     padding-top: 18px;

@@ -12,6 +12,7 @@ import { Project } from "./project.js";
 import { analyzeFile, captureDate } from "./media-adapter.js";
 import { STATES, calibration } from "./classification.js";
 import { statistics, makeExports, csv } from "./export.js";
+import { openDeviceSave } from "./device-save.js";
 import { importPortable } from "./portable.js";
 const $ = (id) => document.getElementById(id),
   esc = (s) =>
@@ -103,6 +104,7 @@ async function enter(result) {
   navigate("auto");
 }
 function showLogin() {
+  $("device-save-dialog")?.close();
   project?.pause();
   project = null;
   user = null;
@@ -147,7 +149,7 @@ async function render() {
     auto: "사진을 추가하고 시작을 누르면, 아이별 정리까지 이어집니다.",
     review: "어려운 얼굴만 확인하세요. 확실한 아이의 사진은 이미 정리됩니다.",
     children: "아이별로 선명한 참고 얼굴 3~5장을 등록해 주세요.",
-    export: "자동 정리된 사진을 날짜별 ZIP으로 준비하세요.",
+    export: "아이와 날짜를 골라 기기에 저장하거나 ZIP으로 내려받으세요.",
     statistics: "같은 정리 결과에서 집계한 아이별 사진 현황입니다.",
     settings: "인식 기준, 정리 방식, 복원과 작업 기록을 관리하세요.",
   }[view];
@@ -207,7 +209,7 @@ async function renderReview() {
   const items = reviewItems(),
     valid = new Set(items.map((m) => m.id));
   selected = new Set([...selected].filter((id) => valid.has(id)));
-  return `<section class="panel section-body"><div class="section-top"><h2>${galleryChild ? esc(name(galleryChild)) + " 정리 결과" : "확인 필요"} <span class="blue">${items.length}</span></h2><button data-action="rematch" ${project.running ? "disabled" : ""}>참고 얼굴로 다시 비교</button></div><div class="batch-bar"><button data-action="select-visible">이 페이지 모두 선택</button><button data-action="clear-selection">선택 해제</button><span id="selected-count">${selected.size}개 선택</span><button data-action="batch-assign">아이 일괄 배정</button><button data-action="batch-exclude">선택 제외</button><button data-action="reanalyze">선택 재분석</button><button data-action="trash">휴지통 이동</button></div>${items.length ? await cards(items) : '<div class="empty"><h3>확인할 사진이 없습니다.</h3><p>확실한 결과는 자동으로 정리됩니다.</p></div>'}</section>`;
+  return `<section class="panel section-body"><div class="section-top"><h2>${galleryChild ? esc(name(galleryChild)) + " 정리 결과" : "확인 필요"} <span class="blue">${items.length}</span></h2><button data-action="rematch" ${project.running ? "disabled" : ""}>참고 얼굴로 다시 비교</button></div>${galleryChild && items.length ? `<p><button class="primary" data-action="save-gallery" id="save-gallery">${selected.size ? "선택한 " + selected.size + "개" : "전체 " + items.length + "개"} 기기에 저장</button></p>` : ""}<div class="batch-bar"><button data-action="select-visible">이 페이지 모두 선택</button><button data-action="clear-selection">선택 해제</button><span id="selected-count">${selected.size}개 선택</span><button data-action="batch-assign">아이 일괄 배정</button><button data-action="batch-exclude">선택 제외</button><button data-action="reanalyze">선택 재분석</button><button data-action="trash">휴지통 이동</button></div>${items.length ? await cards(items) : '<div class="empty"><h3>확인할 사진이 없습니다.</h3><p>확실한 결과는 자동으로 정리됩니다.</p></div>'}</section>`;
 }
 async function openPhoto(id) {
   const m = await project.v.get("media", id);
@@ -319,12 +321,12 @@ async function renderExport() {
   const records = (await project.v.all("exports")).sort(
     (a, b) => b.created - a.created,
   );
-  return `<section class="panel section-body"><h2>자동 정리 결과 보내기</h2><p>확실하게 인식되거나 교정된 사진을 바로 준비합니다. 전체 ZIP에는 보류 폴더와 분류기록도 포함합니다. 큰 결과는 약 64MB 단위로 나눕니다.</p><form id="export-form"><div class="form-row"><label>시작일<input class="text-input" id="export-start" type="date" value="${data.media.map((m) => m.captured).sort()[0] || new Date().toISOString().slice(0, 10)}" required></label><label>종료일<input class="text-input" id="export-end" type="date" value="${
+  return `<section class="panel section-body"><h2>아이별 사진 저장·보내기</h2><p>아이와 기간을 선택해 원본을 기기에 저장하거나 ZIP으로 내려받으세요. 전체 ZIP에는 보류 폴더와 분류기록도 포함합니다. 큰 결과는 약 64MB 단위로 나눕니다.</p><form id="export-form"><div class="form-row"><label>시작일<input class="text-input" id="export-start" type="date" value="${data.media.map((m) => m.captured).sort()[0] || new Date().toISOString().slice(0, 10)}" required></label><label>종료일<input class="text-input" id="export-end" type="date" value="${
     data.media
       .map((m) => m.captured)
       .sort()
       .at(-1) || new Date().toISOString().slice(0, 10)
-  }" required></label></div><div class="check-list">${data.kids.map((k) => `<label><input name="export-child" type="checkbox" value="${k.id}" checked>${esc(k.name)}</label>`).join("")}</div><button class="primary" name="mode" value="child">아이별 ZIP 준비</button> <button name="mode" value="all">전체 ZIP 준비</button></form><div class="export-history">${records.map((r) => `<div><b>${esc(r.name)}</b><small>${r.count}개 파일 · ${r.sentAt ? "사용자가 발송 완료 표시함" : "전송 준비 — 아직 발송하지 않음"}</small><button data-download="${r.id}">ZIP 다운로드</button><button data-sent="${r.id}" ${r.sentAt ? "disabled" : ""}>직접 발송했음 표시</button></div>`).join("")}</div></section>`;
+  }" required></label></div><div class="check-list">${data.kids.map((k) => `<label><input name="export-child" type="checkbox" value="${k.id}" checked>${esc(k.name)}</label>`).join("")}</div><button class="primary" name="mode" value="device">기기에 저장</button> <button name="mode" value="child">아이별 ZIP 준비</button> <button name="mode" value="all">전체 ZIP 준비</button></form><div class="export-history">${records.map((r) => `<div><b>${esc(r.name)}</b><small>${r.count}개 파일 · ${r.sentAt ? "사용자가 발송 완료 표시함" : "전송 준비 — 아직 발송하지 않음"}</small><button data-download="${r.id}">ZIP 다운로드</button><button data-sent="${r.id}" ${r.sentAt ? "disabled" : ""}>직접 발송했음 표시</button></div>`).join("")}</div></section>`;
 }
 function renderStatistics() {
   const rows = statistics(data.kids, data.media);
@@ -377,7 +379,7 @@ function download(blob, filename) {
 function guide() {
   modal(
     "PhotoJoy 사용 가이드",
-    "<ol><li>아이 관리에서 한글 이름·반과 참고 얼굴 3~5장을 등록합니다.</li><li>사진 자동 분류에서 파일 또는 폴더를 추가하고 자동 분류 시작을 누릅니다.</li><li>확실한 아이는 즉시 정리됩니다. 불확실한 얼굴만 확인 필요에서 교정하며 여러 사진은 일괄 배정할 수 있습니다.</li><li>얼굴별 교정에서 참고 데이터 반영을 직접 선택하면 다음 비교에 사용합니다. 자동 추측은 학습하지 않습니다.</li><li>학부모 보내기에서 아이별/전체 ZIP을 내려받습니다. 실제 발송 후 직접 발송했음을 표시합니다.</li><li>설정에서 민감도, 일별·주차별 정리, 백업 복원, 휴지통을 관리합니다.</li></ol><p>사진은 현재 브라우저에 보관됩니다. 분석 중 탭을 열어 두세요. 영상은 최대 8프레임을 분석합니다. HEIC·MOV 지원은 브라우저 코덱에 따라 다르며 실패한 파일도 원본을 보관합니다.</p>",
+    "<ol><li>아이 관리에서 한글 이름·반과 참고 얼굴 3~5장을 등록합니다.</li><li>사진 자동 분류에서 파일 또는 폴더를 추가하고 자동 분류 시작을 누릅니다.</li><li>확실한 아이는 즉시 정리됩니다. 불확실한 얼굴만 확인 필요에서 교정하며 여러 사진은 일괄 배정할 수 있습니다.</li><li>얼굴별 교정에서 참고 데이터 반영을 직접 선택하면 다음 비교에 사용합니다. 자동 추측은 학습하지 않습니다.</li><li>아이별 정리 결과에서 전체 또는 선택한 원본을 기기에 저장하세요. 아이폰 공유 메뉴의 ‘이미지 저장’은 사진 앱에, ‘파일에 저장’은 선택한 폴더에 보관합니다.</li><li>학부모 보내기에서 아이별/전체 ZIP을 내려받습니다. 실제 발송 후 직접 발송했음을 표시합니다.</li><li>설정에서 민감도, 일별·주차별 정리, 백업 복원, 휴지통을 관리합니다.</li></ol><p>사진은 현재 브라우저에 보관됩니다. 분석 중 탭을 열어 두세요. 영상은 최대 8프레임을 분석합니다. HEIC·MOV 지원은 브라우저 코덱에 따라 다르며 실패한 파일도 원본을 보관합니다.</p>",
   );
 }
 document.addEventListener("click", (event) => {
@@ -391,6 +393,12 @@ document.addEventListener("click", (event) => {
       selected.clear();
       page = 0;
       return render();
+    }
+    if (b.dataset.action === "save-gallery") {
+      return openDeviceSave(project, data.media, data.kids, {
+        children: [galleryChild],
+        ids: selected.size ? new Set(selected) : undefined,
+      });
     }
     if (b.dataset.photo) return openPhoto(b.dataset.photo);
     if (b.dataset.childEdit) return childDialog(b.dataset.childEdit);
@@ -550,6 +558,8 @@ document.addEventListener("change", (e) => {
       ? selected.add(e.target.dataset.select)
       : selected.delete(e.target.dataset.select);
     $("selected-count").textContent = selected.size + "개 선택";
+    if ($("save-gallery"))
+      $("save-gallery").textContent = (selected.size ? "선택한 " + selected.size : "전체 " + reviewItems().length) + "개 기기에 저장";
   }
 });
 document.addEventListener("submit", (event) => {
@@ -610,15 +620,17 @@ document.addEventListener("submit", (event) => {
         notify("설정과 정리 결과를 갱신했습니다.");
       }
       if (form.id === "export-form") {
-        notify("ZIP을 준비하고 있습니다…");
-        const r = await makeExports(project, {
+        const options = {
           children: [
             ...form.querySelectorAll("[name=export-child]:checked"),
           ].map((el) => el.value),
           start: $("export-start").value,
           end: $("export-end").value,
           all: b.value === "all",
-        });
+        };
+        if (b.value === "device") return openDeviceSave(project, data.media, data.kids, options);
+        notify("ZIP을 준비하고 있습니다…");
+        const r = await makeExports(project, options);
         await render();
         notify(
           r.length
